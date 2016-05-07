@@ -21,19 +21,20 @@
 module top_level_enc(
 	input clk,
 	input reset,
-	input start_bit,
+	input start,
 	input [127:0] message,
 	input [127:0] e_key,
 	input [127:0] n,
-	output [127:0] c
+	output [127:0] c,
+	output reg done
     );
 
-	reg [127:0] counter;
-	reg [127:0] input1, input3;
-	reg [127:0] input2, input4;
-	wire [255:0] mult;
-	wire [127:0] div;
-	wire [127:0] remainder;
+	reg [127:0] counter;				//counter must go through 0-127 so use 7 bits (2^7 = 128)
+	reg [127:0] mult_a, mult_b;	//inputs to multiplier
+	reg [127:0] div_a, div_b;		//inputs to divider
+	wire [255:0] prod;				//multiplier output (note double length)
+	wire [127:0] quot;				//divider quotient output
+	wire [127:0] remainder;			//divider remainder output
 	
 	parameter [1:0] IDLE = 2'b00,
 						 KEY_LOOP = 2'b01,
@@ -42,9 +43,21 @@ module top_level_enc(
 						 
 	reg [1:0] state;
 	
-	
-	rsa_mult muliply(.clk(clk),.rst(rst),.a(input1),.b(input2),.c_mult(mult));
-	rsa_div divide(.clk(clk),.rst(rst),.a(input3),.b(input4),.quotient(div),.remainder(remainder));
+	//128-bit sequential multiplier completes in 128 clock cycles
+	rsa_mult muliply(
+		.clk(clk),
+		.rst(rst),
+		.a(mult_a),
+		.b(mult_b),
+		.c_mult(prod));
+	//128 sequential divider completes in 128 clock cycles	
+	rsa_div divide(
+		.clk(clk),
+		.rst(rst),
+		.a(div_a),
+		.b(div_b),
+		.quotient(quot),
+		.remainder(remainder));
 	
 	always @(posedge clk) begin
 		if (reset) begin 
@@ -63,10 +76,10 @@ module top_level_enc(
 				KEY_LOOP: begin
 					if (counter == e_key) state = END;
 					else begin
-						input1 = cipher;
-						input2 = cipher;
-						input3 = mult;
-						input4 = n;
+						mult_a = cipher;
+						mult_b = cipher;
+						div_a = mult;
+						div_b = n;
 						cipher =  remainder;
 						counter = counter + 1;
 						e_key = e_key << 1;
@@ -78,10 +91,10 @@ module top_level_enc(
 				EI_1: begin
 					if (counter == e_key) state = END;
 					else begin
-						input1 = cipher;
-						input2 = message;
-						input3 = mult;
-						input4 = n;
+						mult_a = cipher;
+						mult_b = message;
+						div_a = mult;
+						div_b = n;
 						cipher = remainder;
 						counter = counter + 1;
 						e_key = e_key << 1;
